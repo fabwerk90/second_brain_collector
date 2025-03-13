@@ -60,6 +60,55 @@ class NotionClient:
         print(f"Created database with ID: {database_id}")
         return database_id
 
+    def append_raw_text_to_page(self, page_id, raw_text):
+        """
+        Append the raw text content to a page as a source reference.
+
+        Args:
+            page_id: ID of the parent page
+            raw_text: Raw text content to be added
+        """
+
+        # Add a heading for the source text
+        # Split text into chunks to avoid Notion API limits (around 2000 chars per block)
+        chunk_size = 1900  # Keep some buffer below the 2000 char limit
+        text_chunks = [
+            raw_text[i : i + chunk_size] for i in range(0, len(raw_text), chunk_size)
+        ]
+
+        # Create a new page for the raw text
+        create_page_url = "https://api.notion.com/v1/pages"
+        create_page_data = {
+            "parent": {"page_id": page_id},
+            "properties": {
+                "title": {"title": [{"text": {"content": "Source Raw Text"}}]}
+            },
+            "children": [],
+        }
+
+        # Add each text chunk as a paragraph block in the children array
+        for chunk in text_chunks:
+            create_page_data["children"].append(
+                {
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [{"type": "text", "text": {"content": chunk}}]
+                    },
+                }
+            )
+        # Create the new page with all content
+        response = requests.post(
+            create_page_url, headers=self.headers, json=create_page_data
+        )
+
+        if response.status_code != 200:
+            raise Exception(
+                f"Error creating raw text page: {response.status_code}\n{response.text}"
+            )
+
+        return response.json()
+
     def add_quotes_to_database(self, database_id, quotes, notes):
         create_page_url = "https://api.notion.com/v1/pages"
 
@@ -130,19 +179,20 @@ def extract_quotes_from_file(filename):
                 note = section_lines[1].strip()[1:].strip()
             notes.append(note)
 
-        return quotes, notes, f"{author} - {title}"
+        return content, quotes, notes, f"{author} - {title}"
 
 
 def process_kindle_highlights(input_file, config_path):
     try:
         # Get configuration and extract quotes
         token, database_id = get_config(config_path)
-        quotes, notes, page_title = extract_quotes_from_file(input_file)
+        content, quotes, notes, page_title = extract_quotes_from_file(input_file)
 
         # Process with Notion API
         client = NotionClient(token, database_id)
         page_id = client.create_page(page_title, database_id)
         highlights_db_id = client.create_database_in_page(page_id)
+        client.append_raw_text_to_page(page_id, content)
         client.add_quotes_to_database(highlights_db_id, quotes, notes)
 
         print(f"Successfully processed {len(quotes)} quotes from '{page_title}'")
