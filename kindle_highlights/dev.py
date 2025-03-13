@@ -68,7 +68,26 @@ class NotionClient:
             page_id: ID of the parent page
             raw_text: Raw text content to be added
         """
+        update_blocks_url = f"https://api.notion.com/v1/blocks/{page_id}/children"
+        heading_block = {
+            "object": "block",
+            "type": "heading_2",
+            "heading_2": {
+                "rich_text": [
+                    {"type": "text", "text": {"content": "Raw Text Contents"}}
+                ]
+            },
+        }
 
+        # Add heading block first
+        heading_response = requests.patch(
+            update_blocks_url, headers=self.headers, json={"children": [heading_block]}
+        )
+
+        if heading_response.status_code != 200:
+            raise Exception(
+                f"Error adding heading: {heading_response.status_code}\n{heading_response.text}"
+            )
         # Add a heading for the source text
         # Split text into chunks to avoid Notion API limits (around 2000 chars per block)
         chunk_size = 1900  # Keep some buffer below the 2000 char limit
