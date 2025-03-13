@@ -1,3 +1,4 @@
+import concurrent.futures
 import re
 from pathlib import Path
 
@@ -5,143 +6,165 @@ import requests
 import yaml
 
 
+class NotionClient:
+    def __init__(self, token, database_id=None):
+        self.token = token
+        self.database_id = database_id
+        self.headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Notion-Version": "2022-06-28",
+        }
+
+    def create_page(self, page_title, database_id=None):
+        database_id = database_id or self.database_id
+        create_page_url = "https://api.notion.com/v1/pages"
+        create_page_data = {
+            "parent": {"database_id": database_id},
+            "properties": {"Name": {"title": [{"text": {"content": page_title}}]}},
+        }
+
+        response = requests.post(
+            create_page_url, headers=self.headers, json=create_page_data
+        )
+        if response.status_code != 200:
+            raise Exception(
+                f"Error creating page: {response.status_code}\n{response.text}"
+            )
+
+        page_id = response.json()["id"]
+        print(f"Created page with ID: {page_id}")
+        return page_id
+
+    def create_database_in_page(self, page_id):
+        create_db_url = "https://api.notion.com/v1/databases"
+        create_db_data = {
+            "parent": {"page_id": page_id},
+            "title": [{"text": {"content": "All Kindle Highlights"}}],
+            "properties": {
+                "Quote No.": {"title": {}},
+                "Quote": {"rich_text": {}},
+                "Notes": {"rich_text": {}},
+            },
+        }
+
+        response = requests.post(
+            create_db_url, headers=self.headers, json=create_db_data
+        )
+        if response.status_code != 200:
+            raise Exception(
+                f"Error creating database: {response.status_code}\n{response.text}"
+            )
+
+        database_id = response.json()["id"]
+        print(f"Created database with ID: {database_id}")
+        return database_id
+
+    def add_quotes_to_database(self, database_id, quotes, notes):
+        create_page_url = "https://api.notion.com/v1/pages"
+
+        def add_single_quote(item):
+            i, (quote, note) = item
+            create_page_data = {
+                "parent": {"database_id": database_id},
+                "properties": {
+                    "Quote No.": {"title": [{"text": {"content": str(i)}}]},
+                    "Quote": {"rich_text": [{"text": {"content": quote}}]},
+                    "Notes": {"rich_text": [{"text": {"content": note}}]},
+                },
+            }
+
+            response = requests.post(
+                create_page_url, headers=self.headers, json=create_page_data
+            )
+            if response.status_code != 200:
+                print(f"Error adding quote {i}: {response.status_code}")
+                print(response.text)
+                return False
+            else:
+                print(f"Added quote {i} to database")
+                return True
+
+        # Process quotes in parallel with a thread pool
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # Create an enumerated list of quote/note pairs
+            items = list(enumerate(zip(quotes, notes), 1))
+            # Submit all tasks to the executor and wait for completion
+            results = list(executor.map(add_single_quote, items))
+
+        # Return success count
+        return sum(results)
+
+
 def get_config(yaml_path):
-    config_path = Path(yaml_path)
-    with open(config_path, "r") as config_file:
+    with open(Path(yaml_path), "r") as config_file:
         config = yaml.safe_load(config_file)
-        NOTION_TOKEN = config["token"]
-        DATABASE_ID = config["database_id"]
-        return NOTION_TOKEN, DATABASE_ID
+        return config["token"], config["database_id"]
 
 
 def extract_quotes_from_file(filename):
     with open(filename, "r", encoding="utf-8") as file:
         lines = file.readlines()
 
-        # Get title from line 7 (index 6)
-        title_line = lines[6].strip()
-        # Extract title and cut off everything after the first colon
-        title = title_line[9:].split(":", 1)[0].strip()
+        # Get metadata from standard positions
+        try:
+            title = lines[6].strip()[9:].split(":", 1)[0].strip()
+            author = lines[7].strip()[10:].strip()
+        except (IndexError, AttributeError):
+            # Fallback to filename if metadata can't be parsed
+            title = Path(filename).stem
+            author = "Unknown"
 
-        # Get author from line 8 (index 7)
-        author_line = lines[7].strip()
-        author = author_line[10:].strip()
-
-        # Join the lines to create a single string for regex searching
+        # Extract quotes and notes
         content = "".join(lines)
-
-        # Find all quotes and potential notes
         raw_sections = re.findall(r"> (.*?)(?:\n\n|$)", content, re.DOTALL)
 
-        quotes = []
-        notes = []
-
+        quotes, notes = [], []
         for section in raw_sections:
             section_lines = section.strip().split("\n")
-            quote = section_lines[0].strip()
-            quotes.append(quote)
+            quotes.append(section_lines[0].strip())
 
-            # Check if there's a note (starts with "-")
+            # Extract note if present
             note = ""
             if len(section_lines) > 1 and section_lines[1].strip().startswith("-"):
-                note = section_lines[1].strip()[1:].strip()  # Remove the "-" and trim
+                note = section_lines[1].strip()[1:].strip()
             notes.append(note)
 
-        page_title = f"{author} - {title}"
-        return quotes, notes, page_title
+        return quotes, notes, f"{author} - {title}"
 
 
-NOTION_TOKEN, DATABASE_ID = get_config("./second_brain_collector/config.yaml")
+def process_kindle_highlights(input_file, config_path):
+    try:
+        # Get configuration and extract quotes
+        token, database_id = get_config(config_path)
+        quotes, notes, page_title = extract_quotes_from_file(input_file)
 
-QUOTES, NOTES, PAGE_TITLE = extract_quotes_from_file(
-    "./second_brain_collector/kindle_highlights/Daily Stoic.txt"
-)
+        # Process with Notion API
+        client = NotionClient(token, database_id)
+        page_id = client.create_page(page_title, database_id)
+        highlights_db_id = client.create_database_in_page(page_id)
+        client.add_quotes_to_database(highlights_db_id, quotes, notes)
 
-
-def create_notion_page(token, database_id, page_title):
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28",
-    }
-
-    # Create a new page in the database
-    create_page_url = "https://api.notion.com/v1/pages"
-    create_page_data = {
-        "parent": {"database_id": database_id},
-        "properties": {"Name": {"title": [{"text": {"content": page_title}}]}},
-    }
-
-    response = requests.post(create_page_url, headers=headers, json=create_page_data)
-    if response.status_code != 200:
-        print(f"Error creating page: {response.status_code}")
-        print(response.text)
-        return
-
-    page_id = response.json()["id"]
-    print(f"Created page with ID: {page_id}")
-    return page_id
+        print(f"Successfully processed {len(quotes)} quotes from '{page_title}'")
+        return True
+    except Exception as e:
+        print(f"Error processing highlights: {str(e)}")
+        return False
 
 
-def create_database_in_page(token, page_id):
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28",
-    }
+def main():
+    # Simple hardcoded configuration
+    input_file = "./second_brain_collector/kindle_highlights/Daily Stoic.txt"
+    config_file = "./second_brain_collector/config.yaml"
 
-    # Create a new database in the page
-    create_db_url = "https://api.notion.com/v1/databases"
-    create_db_data = {
-        "parent": {"page_id": page_id},
-        "title": [{"text": {"content": "All Kindle Highlights"}}],
-        "properties": {
-            "Quote No.": {"title": {}},
-            "Quote": {"rich_text": {}},
-            "Notes": {"rich_text": {}},
-        },
-    }
+    print(f"Processing highlights from: {input_file}")
+    result = process_kindle_highlights(input_file, config_file)
 
-    response = requests.post(create_db_url, headers=headers, json=create_db_data)
-    if response.status_code != 200:
-        print(f"Error creating database: {response.status_code}")
-        print(response.text)
-        return None
-
-    database_id = response.json()["id"]
-    print(f"Created database with ID: {database_id}")
-    return database_id
+    if result:
+        print("Highlights were successfully processed!")
+    else:
+        print("Failed to process highlights.")
 
 
-def write_quotes_to_database(token, database_id, quotes, notes):
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28",
-    }
-
-    for i, (quote, note) in enumerate(zip(quotes, notes), 1):
-        # Create a new page (row) in the database for each quote
-        create_page_url = "https://api.notion.com/v1/pages"
-        create_page_data = {
-            "parent": {"database_id": database_id},
-            "properties": {
-                "Quote No.": {"title": [{"text": {"content": str(i)}}]},
-                "Quote": {"rich_text": [{"text": {"content": quote}}]},
-                "Notes": {"rich_text": [{"text": {"content": note}}]},
-            },
-        }
-
-        response = requests.post(
-            create_page_url, headers=headers, json=create_page_data
-        )
-        if response.status_code != 200:
-            print(f"Error adding quote {i}: {response.status_code}")
-            print(response.text)
-        else:
-            print(f"Added quote {i} to database")
-
-
-PAGE_ID = create_notion_page(NOTION_TOKEN, DATABASE_ID, PAGE_TITLE)
-NEW_DATABASE_ID = create_database_in_page(NOTION_TOKEN, PAGE_ID)
-write_quotes_to_database(NOTION_TOKEN, NEW_DATABASE_ID, QUOTES, NOTES)
+if __name__ == "__main__":
+    main()
