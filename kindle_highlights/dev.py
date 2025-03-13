@@ -137,6 +137,28 @@ class NotionClient:
         Raises:
             Exception: If the API request fails.
         """
+        # First add a heading for the raw text section
+        append_heading_url = "https://api.notion.com/v1/blocks/" + page_id + "/children"
+        heading_data = {
+            "children": [
+                {
+                    "object": "block",
+                    "type": "heading_2",
+                    "heading_2": {
+                        "rich_text": [{"type": "text", "text": {"content": "Source"}}]
+                    },
+                }
+            ]
+        }
+
+        heading_response = requests.patch(
+            append_heading_url, headers=self.headers, json=heading_data
+        )
+        if heading_response.status_code != 200:
+            raise Exception(
+                f"Error adding heading: {heading_response.status_code}\n{heading_response.text}"
+            )
+
         create_page_url = "https://api.notion.com/v1/pages"
 
         # Create a new page for the raw text with chunked content
@@ -307,7 +329,7 @@ def process_kindle_highlights(input_file: str, config_path: str) -> bool:
 def main():
     """Main function to process Kindle highlights."""
     # Simple hardcoded configuration
-    input_file = "./second_brain_collector/kindle_highlights/Daily Stoic.txt"
+    input_file = "./second_brain_collector/kindle_highlights/Atomic.txt"
     config_file = "./second_brain_collector/config.yaml"
 
     print(f"Processing highlights from: {input_file}")
