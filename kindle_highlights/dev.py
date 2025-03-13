@@ -1,13 +1,33 @@
 import concurrent.futures
 import re
 from pathlib import Path
+from typing import List, Tuple
 
 import requests
 import yaml
 
 
 class NotionClient:
-    def __init__(self, token, database_id=None):
+    def __init__(self, token: str, database_id: str = None):
+        """
+        Initializes a client for interacting with the Notion API.
+
+        Parameters:
+        ----------
+        token : str
+            The Notion API token for authorization.
+        database_id : str, optional
+            The ID of the Notion database to connect to.
+
+        Attributes:
+        ----------
+        token : str
+            The stored Notion API token.
+        database_id : str
+            The ID of the connected Notion database.
+        headers : dict
+            HTTP headers used for Notion API requests, including authorization token.
+        """
         self.token = token
         self.database_id = database_id
         self.headers = {
@@ -16,12 +36,28 @@ class NotionClient:
             "Notion-Version": "2022-06-28",
         }
 
-    def create_page(self, page_title, database_id=None):
+    def create_page(self, page_title: str, database_id: str = None) -> str:
+        """
+        Creates a new page in Notion database with the given title.
+        Args:
+            page_title (str): The title of the page to create.
+            database_id (str, optional): The ID of the database to create the page in.
+                                         Defaults to self.database_id.
+        Returns:
+            str: The ID of the newly created page.
+        Raises:
+            Exception: If the page creation fails, including the status code and response text.
+        Note:
+            The page is created with "Book / Kindle" category by default.
+        """
         database_id = database_id or self.database_id
         create_page_url = "https://api.notion.com/v1/pages"
         create_page_data = {
             "parent": {"database_id": database_id},
-            "properties": {"Name": {"title": [{"text": {"content": page_title}}]}},
+            "properties": {
+                "Name": {"title": [{"text": {"content": page_title}}]},
+                "Category": {"select": {"name": "Book / Kindle"}},
+            },
         }
 
         response = requests.post(
@@ -36,7 +72,19 @@ class NotionClient:
         print(f"Created page with ID: {page_id}")
         return page_id
 
-    def create_database_in_page(self, page_id):
+    def create_database_in_page(self, page_id: str) -> str:
+        """
+        Create a new database in a specified Notion page for storing Kindle highlights.
+        Creates a database titled "All Kindle Highlights" with properties for quote numbers,
+        the quotes themselves, and any associated notes. The database is created as a child
+        of the specified page.
+        Args:
+            page_id (str): The ID of the parent Notion page where the database will be created.
+        Returns:
+            str: The ID of the newly created database.
+        Raises:
+            Exception: If the database creation fails, including the HTTP status code and response text.
+        """
         create_db_url = "https://api.notion.com/v1/databases"
         create_db_data = {
             "parent": {"page_id": page_id},
@@ -60,63 +108,58 @@ class NotionClient:
         print(f"Created database with ID: {database_id}")
         return database_id
 
-    def append_raw_text_to_page(self, page_id, raw_text):
-        """
-        Append the raw text content to a page as a source reference.
+    def _chunk_text(self, text: str, chunk_size: int = 1900) -> list[str]:
+        """Split text into chunks to avoid Notion API limits.
 
         Args:
-            page_id: ID of the parent page
-            raw_text: Raw text content to be added
+            text: The text to split into chunks.
+            chunk_size: Maximum size of each chunk. Defaults to 1900
+                        (Notion API has 2000 char limit per block).
+
+        Returns:
+            List of text chunks of specified size.
         """
-        update_blocks_url = f"https://api.notion.com/v1/blocks/{page_id}/children"
-        heading_block = {
-            "object": "block",
-            "type": "heading_2",
-            "heading_2": {
-                "rich_text": [
-                    {"type": "text", "text": {"content": "Raw Text Contents"}}
-                ]
-            },
-        }
+        return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
 
-        # Add heading block first
-        heading_response = requests.patch(
-            update_blocks_url, headers=self.headers, json={"children": [heading_block]}
-        )
+    def append_raw_text_to_page(self, page_id: str, raw_text: str) -> dict:
+        """Create a child page containing the raw text content.
 
-        if heading_response.status_code != 200:
-            raise Exception(
-                f"Error adding heading: {heading_response.status_code}\n{heading_response.text}"
-            )
-        # Add a heading for the source text
-        # Split text into chunks to avoid Notion API limits (around 2000 chars per block)
-        chunk_size = 1900  # Keep some buffer below the 2000 char limit
-        text_chunks = [
-            raw_text[i : i + chunk_size] for i in range(0, len(raw_text), chunk_size)
+        Creates a new page under the specified parent page and adds the raw text
+        content split into appropriate chunks to avoid API limits.
+
+        Args:
+            page_id: ID of the parent page.
+            raw_text: Raw text content to be added to the page.
+
+        Returns:
+            The JSON response from the Notion API.
+
+        Raises:
+            Exception: If the API request fails.
+        """
+        create_page_url = "https://api.notion.com/v1/pages"
+
+        # Create a new page for the raw text with chunked content
+        text_chunks = self._chunk_text(raw_text)
+        children = [
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [{"type": "text", "text": {"content": chunk}}]
+                },
+            }
+            for chunk in text_chunks
         ]
 
-        # Create a new page for the raw text
-        create_page_url = "https://api.notion.com/v1/pages"
         create_page_data = {
             "parent": {"page_id": page_id},
             "properties": {
                 "title": {"title": [{"text": {"content": "Source Raw Text"}}]}
             },
-            "children": [],
+            "children": children,
         }
 
-        # Add each text chunk as a paragraph block in the children array
-        for chunk in text_chunks:
-            create_page_data["children"].append(
-                {
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [{"type": "text", "text": {"content": chunk}}]
-                    },
-                }
-            )
-        # Create the new page with all content
         response = requests.post(
             create_page_url, headers=self.headers, json=create_page_data
         )
@@ -128,10 +171,25 @@ class NotionClient:
 
         return response.json()
 
-    def add_quotes_to_database(self, database_id, quotes, notes):
+    def add_quotes_to_database(
+        self, database_id: str, quotes: List[str], notes: List[str]
+    ) -> int:
+        """Add quotes and notes to the specified Notion database.
+
+        Args:
+            database_id: ID of the Notion database.
+            quotes: List of quotes to be added.
+            notes: List of notes corresponding to the quotes.
+
+        Returns:
+            The number of successfully added quotes.
+
+        Raises:
+            Exception: If the API request fails.
+        """
         create_page_url = "https://api.notion.com/v1/pages"
 
-        def add_single_quote(item):
+        def add_single_quote(item: Tuple[int, Tuple[str, str]]) -> bool:
             i, (quote, note) = item
             create_page_data = {
                 "parent": {"database_id": database_id},
@@ -164,13 +222,29 @@ class NotionClient:
         return sum(results)
 
 
-def get_config(yaml_path):
+def get_config(yaml_path: str) -> Tuple[str, str]:
+    """Load configuration from a YAML file.
+
+    Args:
+        yaml_path: Path to the YAML configuration file.
+
+    Returns:
+        A tuple containing the Notion API token and database ID.
+    """
     with open(Path(yaml_path), "r") as config_file:
         config = yaml.safe_load(config_file)
         return config["token"], config["database_id"]
 
 
-def extract_quotes_from_file(filename):
+def extract_quotes_from_file(filename: str) -> Tuple[str, List[str], List[str], str]:
+    """Extract quotes and notes from a text file.
+
+    Args:
+        filename: Path to the text file containing quotes and notes.
+
+    Returns:
+        A tuple containing the raw content, list of quotes, list of notes, and the page title.
+    """
     with open(filename, "r", encoding="utf-8") as file:
         lines = file.readlines()
 
@@ -201,7 +275,16 @@ def extract_quotes_from_file(filename):
         return content, quotes, notes, f"{author} - {title}"
 
 
-def process_kindle_highlights(input_file, config_path):
+def process_kindle_highlights(input_file: str, config_path: str) -> bool:
+    """Process Kindle highlights and add them to Notion.
+
+    Args:
+        input_file: Path to the text file containing Kindle highlights.
+        config_path: Path to the YAML configuration file.
+
+    Returns:
+        True if the highlights were successfully processed, False otherwise.
+    """
     try:
         # Get configuration and extract quotes
         token, database_id = get_config(config_path)
@@ -222,6 +305,7 @@ def process_kindle_highlights(input_file, config_path):
 
 
 def main():
+    """Main function to process Kindle highlights."""
     # Simple hardcoded configuration
     input_file = "./second_brain_collector/kindle_highlights/Daily Stoic.txt"
     config_file = "./second_brain_collector/config.yaml"
