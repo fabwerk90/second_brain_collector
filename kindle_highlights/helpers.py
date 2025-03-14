@@ -328,22 +328,3 @@ def process_kindle_highlights(input_file: str, config_path: str) -> bool:
     except Exception as e:
         print(f"Error processing highlights: {str(e)}")
         return False
-
-
-def main(file):
-    """Main function to process Kindle highlights."""
-    # Simple hardcoded configuration
-    input_file = f"./second_brain_collector/kindle_highlights/{file}.txt"
-    config_file = "./second_brain_collector/config.yaml"
-
-    print(f"Processing highlights from: {input_file}")
-    result = process_kindle_highlights(input_file, config_file)
-
-    if result:
-        print("Highlights were successfully processed!")
-    else:
-        print("Failed to process highlights.")
-
-
-if __name__ == "__main__":
-    main("sensitive")
