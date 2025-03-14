@@ -1,8 +1,8 @@
-from kindle_highlights.helpers import process_kindle_highlights, main as helpers_main
+from kindle_highlights.process_highlights import process_kindle_highlights
 
 def main(file):
     """Main function to process Kindle highlights."""
-    helpers_main(file)
+    process_kindle_highlights(file)
 
 if __name__ == "__main__":
     main("sensitive")
