@@ -1,3 +1,4 @@
+import os
 import textwrap
 from typing import Any, Dict, List, Optional
 
@@ -119,7 +120,9 @@ class YouTubeTranscriptFetcher:
                     for transcript in transcript_list:
                         try:
                             trans_list = transcript.fetch()
-                            transcript_text = " ".join(part["text"] for part in trans_list)
+                            transcript_text = " ".join(
+                                part["text"] for part in trans_list
+                            )
                             print(f"Transcript in {transcript.language_code} retrieved")
                             return transcript_text
                         except Exception:
