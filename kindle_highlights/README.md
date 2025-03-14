@@ -29,7 +29,26 @@ To install the `kindle_highlights` project, follow these steps:
 
 To process Kindle highlights and add them to Notion, use the following command:
 ```bash
-python main.py <path_to_kindle_highlights_file>
+python main.py <path_to_kindle_highlights_file> <path_to_config_file>
+```
+
+## Parameters
+
+- `<path_to_kindle_highlights_file>`: The path to the text file containing Kindle highlights.
+- `<path_to_config_file>`: The path to the YAML configuration file containing the Notion API token and database ID.
+
+## Code Structure
+
+```mermaid
+graph TD;
+    A[main.py] --> B[process_highlights.py];
+    B --> C[get_config from config.py];
+    B --> D[extract_quotes_from_file from extract_quotes.py];
+    B --> E[NotionClient from notion_client.py];
+    E --> F[create_page];
+    E --> G[create_database_in_page];
+    E --> H[append_raw_text_to_page];
+    E --> I[add_quotes_to_database];
 ```
 
 ## Contributing Guidelines

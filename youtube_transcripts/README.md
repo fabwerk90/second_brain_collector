@@ -29,7 +29,25 @@ To install the `youtube_transcripts` project, follow these steps:
 
 To process YouTube transcripts and add them to Notion, use the following command:
 ```bash
-python notion_transcript_updater.py
+python main.py
+```
+
+## Parameters
+
+- `main.py`: The main script to process YouTube videos from Notion database and update pages with transcripts.
+
+## Code Structure
+
+```mermaid
+graph TD;
+    A[main.py] --> B[notion_client.py];
+    A --> C[youtube_transcript_fetcher.py];
+    B --> D[get_youtube_items];
+    B --> E[clear_page_content];
+    B --> F[update_page_with_transcript];
+    C --> G[extract_youtube_link];
+    C --> H[chunk_text];
+    C --> I[get_youtube_transcript];
 ```
 
 ## Contributing Guidelines
