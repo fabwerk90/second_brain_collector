@@ -286,7 +286,11 @@ def extract_quotes_from_file(filename: str) -> Tuple[str, List[str], List[str], 
         quotes, notes = [], []
         for section in raw_sections:
             section_lines = section.strip().split("\n")
-            quotes.append(section_lines[0].strip())
+            quote = section_lines[0].strip()
+            # Limit quotes to 2000 characters to comply with Notion API limits
+            if len(quote) > 2000:
+                quote = quote[:1997] + "..."
+            quotes.append(quote)
 
             # Extract note if present
             note = ""
@@ -326,10 +330,10 @@ def process_kindle_highlights(input_file: str, config_path: str) -> bool:
         return False
 
 
-def main():
+def main(file):
     """Main function to process Kindle highlights."""
     # Simple hardcoded configuration
-    input_file = "./second_brain_collector/kindle_highlights/Atomic.txt"
+    input_file = f"./second_brain_collector/kindle_highlights/{file}.txt"
     config_file = "./second_brain_collector/config.yaml"
 
     print(f"Processing highlights from: {input_file}")
@@ -342,4 +346,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main("sensitive")
