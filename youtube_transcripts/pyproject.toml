@@ -1,0 +1,30 @@
+[project]
+name = "youtube_transcripts"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.25.0",
+    "pyyaml>=6.0.0",
+    "youtube-transcript-api>=0.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.5"
+]
+
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+disable_error_code = ["import-untyped", "no-any-return"]
