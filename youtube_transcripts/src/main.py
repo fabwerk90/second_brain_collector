@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
-from youtube_transcripts.src.notion_client import NotionClient
-from youtube_transcripts.src.youtube_transcript_fetcher import (
+from youtube_transcripts.src.utils.notion_client import NotionClient
+from youtube_transcripts.src.utils.youtube_transcript_fetcher import (
     chunk_text,
     extract_youtube_link,
     get_youtube_transcript,
