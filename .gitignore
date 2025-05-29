@@ -45,10 +45,6 @@ ENV/
 *.csv
 *.txt
 
-# YAML files
-*.yml
-*.yaml
-
 # Logs
 logs/
 *.log
